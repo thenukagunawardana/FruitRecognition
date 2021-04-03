@@ -1,0 +1,107 @@
+from keras.models import Sequential
+from keras.layers.convolutional import Conv2D
+from keras.layers.convolutional import MaxPooling2D
+from keras.layers.core import Flatten
+from keras.layers.core import Dense
+from keras.optimizers import Adam
+import time
+from keras.callbacks import TensorBoard
+from keras.preprocessing.image import ImageDataGenerator
+import tensorflow as tf
+import numpy as np
+from sklearn.metrics import confusion_matrix, classification_report
+
+NAME = "Fruit-Classification-{}".format(int(time.time()))
+
+tensorboard = TensorBoard(log_dir= 'logs/{}'.format(NAME))
+
+# Initialising the CNN
+classifier = Sequential()
+
+# Step 1 - Convolution  Input Layer
+classifier.add(Conv2D(32, (3, 3), input_shape = (100, 100, 3), activation = 'relu'))
+
+
+# Step 2 - Pooling
+classifier.add(MaxPooling2D(pool_size = (2, 2)))
+
+# Adding a second convolutional layer
+classifier.add(Conv2D(32, (3, 3), activation = 'relu'))
+classifier.add(MaxPooling2D(pool_size = (2, 2)))
+
+# Step 3 - Flattening   
+classifier.add(Flatten())
+
+# Step 4 - Full connection  Output Layer
+classifier.add(Dense(units = 128, activation = 'relu'))
+classifier.add(Dense(units = 3, activation = 'sigmoid'))
+
+# Compiling the CNN
+classifier.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['accuracy'])
+
+classifier.summary()
+
+# Part 2 - Fitting the CNN to the images
+
+batch_size = 16
+
+train_datagen = ImageDataGenerator(rescale = 1./255,
+                                   shear_range = 0.2,
+                                   zoom_range = 0.2,
+                                   horizontal_flip = True)
+
+test_datagen = ImageDataGenerator(rescale = 1./255)
+
+Training = train_datagen.flow_from_directory(r'D:\FYP\Dataset2\Training',
+                                                 target_size = (100, 100),
+                                                 batch_size = batch_size,
+                                                 class_mode = 'categorical')
+
+Validation = test_datagen.flow_from_directory(r'D:\FYP\Dataset2\Validation',
+                                            target_size = (100, 100),  
+                                            batch_size = batch_size,
+                                            class_mode = 'categorical')
+
+classifier.fit_generator(Training,
+                         steps_per_epoch = 200//batch_size,
+                         epochs = 20,
+                         validation_data = Validation,
+                         callbacks = [tensorboard])    #Training the neural network, epoch is the number of times the data is convulated 
+
+print(Training.class_indices)
+
+labels = '\n'.join(sorted(Training.class_indices.keys()))
+
+with open('labels.txt', 'w') as f:
+    f.write(labels)
+
+saved_model_dir = ''
+tf.saved_model.save(classifier, saved_model_dir)
+converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
+tflite_model = converter.convert()
+
+with open('testModel.tflite', 'wb') as f:
+    f.write(tflite_model)
+
+
+
+
+# Confusion Matrix  
+
+num_of_test_samples = 100
+
+Y_pred = classifier.predict(Validation, num_of_test_samples // batch_size+1)
+y_pred = np.argmax(Y_pred, axis=1)
+print('Confusion Matrix')
+print(confusion_matrix(Validation.classes, y_pred))
+
+# Classification Report
+
+y_true = [0, 1, 2, 1, 2]
+y_pred = [0, 0, 2, 1, 1]
+target_names = ['Apple', 'Banana', 'Orange']
+print(classification_report(y_true, y_pred, target_names=target_names))
+
+
+
+
